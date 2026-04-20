@@ -26,19 +26,19 @@ try:
 except Exception:
     pass  # st.secrets not available locally
 
-# DEBUG: show key info in sidebar (remove after confirming)
-_k = os.environ.get("ANTHROPIC_API_KEY", "")
-if _k:
-    st.sidebar.info(f"API key loaded: {_k[:12]}...{_k[-4:]} (len={len(_k)})")
-else:
-    st.sidebar.warning("No ANTHROPIC_API_KEY found in env")
-
 # ── Page Config ─────────────────────────────────────────────
 st.set_page_config(
     page_title="Reddit VOC Pipeline",
     page_icon="🔍",
     layout="wide",
 )
+
+# DEBUG: show key info in sidebar (remove after confirming)
+_k = os.environ.get("ANTHROPIC_API_KEY", "")
+if _k:
+    st.sidebar.info(f"API key loaded: {_k[:12]}...{_k[-4:]} (len={len(_k)})")
+else:
+    st.sidebar.warning("No ANTHROPIC_API_KEY found in env")
 
 # ── Custom CSS ──────────────────────────────────────────────
 st.markdown("""
