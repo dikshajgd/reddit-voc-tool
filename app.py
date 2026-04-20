@@ -33,12 +33,29 @@ st.set_page_config(
     layout="wide",
 )
 
-# DEBUG: show key info in sidebar (remove after confirming)
+# DEBUG: show key info + test button (remove after confirming)
 _k = os.environ.get("ANTHROPIC_API_KEY", "")
 if _k:
-    st.sidebar.info(f"API key loaded: {_k[:12]}...{_k[-4:]} (len={len(_k)})")
+    st.sidebar.info(f"API key: {_k[:12]}...{_k[-4:]} (len={len(_k)})")
+    if st.sidebar.button("🧪 Test API Key"):
+        import urllib.request, urllib.error, json as _json
+        _req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=_json.dumps({"model": "claude-sonnet-4-20250514", "max_tokens": 10,
+                              "messages": [{"role": "user", "content": "say hi"}]}).encode(),
+            headers={"x-api-key": _k, "content-type": "application/json",
+                     "anthropic-version": "2023-06-01"},
+            method="POST",
+        )
+        try:
+            _resp = urllib.request.urlopen(_req, timeout=15)
+            st.sidebar.success(f"✅ Key works! HTTP {_resp.status}")
+        except urllib.error.HTTPError as _e:
+            st.sidebar.error(f"❌ HTTP {_e.code}: {_e.read().decode()[:200]}")
+        except Exception as _e:
+            st.sidebar.error(f"❌ {_e}")
 else:
-    st.sidebar.warning("No ANTHROPIC_API_KEY found in env")
+    st.sidebar.warning("No ANTHROPIC_API_KEY found")
 
 # ── Custom CSS ──────────────────────────────────────────────
 st.markdown("""
