@@ -7,7 +7,7 @@ import os
 import anthropic
 
 # Initialize client — reads ANTHROPIC_API_KEY from env (or st.secrets on Streamlit Cloud)
-_api_key = os.environ.get("ANTHROPIC_API_KEY")
+_api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 client = anthropic.Anthropic(api_key=_api_key) if _api_key else None
 
 MODEL = "claude-sonnet-4-20250514"
@@ -29,7 +29,14 @@ def call_claude(system_prompt: str, user_message: str, max_tokens: int = 16000) 
 
     # Lazy init for Streamlit Cloud where secrets load after import
     if client is None:
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        # Try os.environ first, then st.secrets directly as fallback
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+        if not api_key:
+            try:
+                import streamlit as st
+                api_key = st.secrets.get("ANTHROPIC_API_KEY", "").strip()
+            except Exception:
+                pass
         if not api_key:
             raise RuntimeError(
                 "ANTHROPIC_API_KEY not found. Set it in .env (local) "
