@@ -20,10 +20,18 @@ load_dotenv()
 # Bridge Streamlit Cloud secrets into os.environ for SDK compatibility
 try:
     for key in ["ANTHROPIC_API_KEY", "APIFY_API_TOKEN"]:
-        if key in st.secrets and key not in os.environ:
-            os.environ[key] = st.secrets[key]
+        if key in st.secrets:
+            val = st.secrets[key].strip()
+            os.environ[key] = val
 except Exception:
     pass  # st.secrets not available locally
+
+# DEBUG: show key info in sidebar (remove after confirming)
+_k = os.environ.get("ANTHROPIC_API_KEY", "")
+if _k:
+    st.sidebar.info(f"API key loaded: {_k[:12]}...{_k[-4:]} (len={len(_k)})")
+else:
+    st.sidebar.warning("No ANTHROPIC_API_KEY found in env")
 
 # ── Page Config ─────────────────────────────────────────────
 st.set_page_config(
