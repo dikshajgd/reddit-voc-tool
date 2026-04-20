@@ -143,6 +143,113 @@ if have_map:
             )
 
 
+# ── Pipeline Resume Helpers (must be defined before use) ────
+
+
+def _run_from_step2(max_threads, max_comments, industry, brand_url, output_dir):
+    """Resume pipeline from Step 2 using saved Step 1 result."""
+    start = time.time()
+    progress = st.empty()
+    parsed_data = st.session_state.step1_result
+    run_product = st.session_state.run_product
+
+    # ── Step 2 ──
+    progress.info("⏳ **Step 2/4** — Retrying Reddit scraping...")
+    st.session_state.logs.append("Retrying Step 2: Reddit Scraping...")
+    try:
+        scraped_data, method = run_step2(
+            parsed_data=parsed_data,
+            max_threads=max_threads, max_comments=max_comments,
+            product=run_product or "",
+        )
+        st.session_state.step2_result = scraped_data
+        st.session_state.step2_method = method
+        if len(scraped_data) == 0:
+            st.session_state.step2_failed = True
+            st.session_state.error = (
+                "Reddit still returned no results. "
+                "You can retry again or upload your own Reddit data."
+            )
+            st.session_state.logs.append("Retry: Still 0 threads scraped.")
+            st.session_state.current_step = 2
+            st.session_state.pipeline_running = False
+            st.rerun()
+        method_label = {"json_api": "JSON API", "web_search": "web search", "apify": "Apify"}.get(method, method)
+        st.session_state.logs.append(
+            f"Step 2 complete via {method_label} (retry). Scraped {len(scraped_data)} threads."
+        )
+        st.session_state.current_step = 3
+    except Exception as e:
+        st.session_state.step2_failed = True
+        st.session_state.error = str(e)
+        st.session_state.logs.append(f"Step 2 retry failed: {e}")
+        st.session_state.pipeline_running = False
+        st.rerun()
+
+    _run_steps_3_and_4(scraped_data, industry, brand_url, output_dir, progress, start)
+
+
+def _run_from_step3(scraped_data, industry, brand_url, output_dir):
+    """Resume pipeline from Step 3 using provided scraped data."""
+    start = time.time()
+    progress = st.empty()
+
+    _run_steps_3_and_4(scraped_data, industry, brand_url, output_dir, progress, start)
+
+
+def _run_steps_3_and_4(scraped_data, industry, brand_url, output_dir, progress, start):
+    """Run Steps 3 and 4, then finalize."""
+    run_product = st.session_state.run_product
+
+    # ── Step 3 ──
+    progress.info("⏳ **Step 3/4** — Extracting VOC insights (Claude Opus)...")
+    st.session_state.logs.append("Starting Step 3: VOC Extraction & Classification...")
+    try:
+        voc_path = run_step3(
+            scraped_data=scraped_data,
+            product=run_product, industry=industry,
+            brand_url=brand_url or None, output_dir=output_dir,
+        )
+        if voc_path and os.path.exists(voc_path):
+            with open(voc_path, "r") as f:
+                st.session_state.step3_md = f.read()
+            st.session_state.logs.append("Step 3 complete. VOC document generated.")
+        else:
+            st.session_state.step3_failed = True
+            st.session_state.logs.append("Step 3 finished but no VOC file was created.")
+    except Exception as e:
+        st.session_state.step3_failed = True
+        st.session_state.logs.append(f"Step 3 failed: {e}")
+    st.session_state.current_step = 4
+
+    # ── Step 4 ──
+    if st.session_state.step3_md:
+        progress.info("⏳ **Step 4/4** — Clustering personas & awareness levels (Claude Opus)...")
+        st.session_state.logs.append("Starting Step 4: Persona & Awareness Level Clustering...")
+        try:
+            persona_path = run_step4(
+                voc_md=st.session_state.step3_md,
+                product=run_product, industry=industry,
+                output_dir=output_dir,
+            )
+            if persona_path and os.path.exists(persona_path):
+                with open(persona_path, "r") as f:
+                    st.session_state.step4_md = f.read()
+                st.session_state.logs.append("Step 4 complete. Personas & awareness levels generated.")
+            else:
+                st.session_state.step4_failed = True
+                st.session_state.logs.append("Step 4 finished but no persona file was created.")
+        except Exception as e:
+            st.session_state.step4_failed = True
+            st.session_state.logs.append(f"Step 4 failed: {e}")
+
+    st.session_state.elapsed = (st.session_state.elapsed or 0) + (time.time() - start)
+    st.session_state.current_step = 5 if st.session_state.step4_md else 4
+    st.session_state.pipeline_running = False
+    progress.empty()
+    st.rerun()
+
+
 # ── Step Status Helpers ─────────────────────────────────────
 def step_status(step_num):
     current = st.session_state.current_step
@@ -277,7 +384,7 @@ if run_clicked:
                 st.session_state.current_step = 2
                 st.session_state.pipeline_running = False
                 st.rerun()
-            method_label = {"json_api": "JSON API", "web_search": "web search fallback"}.get(method, method)
+            method_label = {"json_api": "JSON API", "web_search": "web search fallback", "apify": "Apify"}.get(method, method)
             st.session_state.logs.append(
                 f"Step 2 complete via {method_label}. Scraped {len(scraped_data)} threads."
             )
@@ -454,110 +561,6 @@ if st.session_state.step2_failed and st.session_state.step1_result and not st.se
         )
 
         _run_from_step3(parsed_threads, industry, brand_url, output_dir)
-
-
-def _run_from_step2(max_threads, max_comments, industry, brand_url, output_dir):
-    """Resume pipeline from Step 2 using saved Step 1 result."""
-    start = time.time()
-    progress = st.empty()
-    parsed_data = st.session_state.step1_result
-    run_product = st.session_state.run_product
-
-    # ── Step 2 ──
-    progress.info("⏳ **Step 2/4** — Retrying Reddit scraping...")
-    st.session_state.logs.append("Retrying Step 2: Reddit Scraping...")
-    try:
-        scraped_data, method = run_step2(
-            parsed_data=parsed_data,
-            max_threads=max_threads, max_comments=max_comments,
-            product=run_product or "",
-        )
-        st.session_state.step2_result = scraped_data
-        st.session_state.step2_method = method
-        if len(scraped_data) == 0:
-            st.session_state.step2_failed = True
-            st.session_state.error = (
-                "Reddit still returned no results. "
-                "You can retry again or upload your own Reddit data."
-            )
-            st.session_state.logs.append("Retry: Still 0 threads scraped.")
-            st.session_state.current_step = 2
-            st.session_state.pipeline_running = False
-            st.rerun()
-        method_label = {"json_api": "JSON API", "web_search": "web search"}.get(method, method)
-        st.session_state.logs.append(
-            f"Step 2 complete via {method_label} (retry). Scraped {len(scraped_data)} threads."
-        )
-        st.session_state.current_step = 3
-    except Exception as e:
-        st.session_state.step2_failed = True
-        st.session_state.error = str(e)
-        st.session_state.logs.append(f"Step 2 retry failed: {e}")
-        st.session_state.pipeline_running = False
-        st.rerun()
-
-    _run_steps_3_and_4(scraped_data, industry, brand_url, output_dir, progress, start)
-
-
-def _run_from_step3(scraped_data, industry, brand_url, output_dir):
-    """Resume pipeline from Step 3 using provided scraped data."""
-    start = time.time()
-    progress = st.empty()
-
-    _run_steps_3_and_4(scraped_data, industry, brand_url, output_dir, progress, start)
-
-
-def _run_steps_3_and_4(scraped_data, industry, brand_url, output_dir, progress, start):
-    """Run Steps 3 and 4, then finalize."""
-    run_product = st.session_state.run_product
-
-    # ── Step 3 ──
-    progress.info("⏳ **Step 3/4** — Extracting VOC insights (Claude Opus)...")
-    st.session_state.logs.append("Starting Step 3: VOC Extraction & Classification...")
-    try:
-        voc_path = run_step3(
-            scraped_data=scraped_data,
-            product=run_product, industry=industry,
-            brand_url=brand_url or None, output_dir=output_dir,
-        )
-        if voc_path and os.path.exists(voc_path):
-            with open(voc_path, "r") as f:
-                st.session_state.step3_md = f.read()
-            st.session_state.logs.append("Step 3 complete. VOC document generated.")
-        else:
-            st.session_state.step3_failed = True
-            st.session_state.logs.append("Step 3 finished but no VOC file was created.")
-    except Exception as e:
-        st.session_state.step3_failed = True
-        st.session_state.logs.append(f"Step 3 failed: {e}")
-    st.session_state.current_step = 4
-
-    # ── Step 4 ──
-    if st.session_state.step3_md:
-        progress.info("⏳ **Step 4/4** — Clustering personas & awareness levels (Claude Opus)...")
-        st.session_state.logs.append("Starting Step 4: Persona & Awareness Level Clustering...")
-        try:
-            persona_path = run_step4(
-                voc_md=st.session_state.step3_md,
-                product=run_product, industry=industry,
-                output_dir=output_dir,
-            )
-            if persona_path and os.path.exists(persona_path):
-                with open(persona_path, "r") as f:
-                    st.session_state.step4_md = f.read()
-                st.session_state.logs.append("Step 4 complete. Personas & awareness levels generated.")
-            else:
-                st.session_state.step4_failed = True
-                st.session_state.logs.append("Step 4 finished but no persona file was created.")
-        except Exception as e:
-            st.session_state.step4_failed = True
-            st.session_state.logs.append(f"Step 4 failed: {e}")
-
-    st.session_state.elapsed = (st.session_state.elapsed or 0) + (time.time() - start)
-    st.session_state.current_step = 5 if st.session_state.step4_md else 4
-    st.session_state.pipeline_running = False
-    progress.empty()
-    st.rerun()
 
 
 # ── Results Tabs ────────────────────────────────────────────

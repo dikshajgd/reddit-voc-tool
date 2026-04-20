@@ -6,6 +6,8 @@ Uses trudax/reddit-scraper-lite actor for reliable Reddit data.
 import hashlib
 import json
 import os
+import shutil
+import subprocess
 import time
 import urllib.request
 import urllib.parse
@@ -18,6 +20,8 @@ load_dotenv()
 APIFY_TOKEN = os.getenv("APIFY_API_TOKEN", "")
 APIFY_ACTOR = "trudax~reddit-scraper-lite"
 APIFY_BASE = "https://api.apify.com/v2"
+
+CLAUDE_BIN = shutil.which("claude") or "claude"
 
 MAX_TOTAL_THREADS = 200
 MAX_BATCHES = 8
@@ -574,6 +578,10 @@ def run_step2(parsed_data, max_threads=50, max_comments=50, product=""):
     print("\n" + "=" * 60)
     print("STEP 2: Reddit Scraping (Apify)")
     print("=" * 60)
+
+    # Re-read token at runtime (may have been set after import by st.secrets bridging)
+    global APIFY_TOKEN
+    APIFY_TOKEN = os.getenv("APIFY_API_TOKEN", "") or APIFY_TOKEN
 
     # ── Primary: Apify ─────────────────────────────────────
     if not APIFY_TOKEN:
